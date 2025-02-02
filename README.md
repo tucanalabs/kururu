@@ -1,10 +1,6 @@
-<p align="center">
-    <img src="./mothra_logo-text.PNG" width="300">
-</p>
+# Kururu
 
-Mothra analyzes images of lepidopterans — mainly butterflies and moths — and measures their wing lengths. Using binarization techniques and calculating the resolution of ruler ticks, we read in images of lepidopterans and output the millimeter lengths of their wings.
-
-![example output](examples/result-plot-BMNHE_500607.JPG)
+Kururu analyzes images of anurans — mainly frogs of the Boana species — and returns their measurements.
 
 ## Usage
 
