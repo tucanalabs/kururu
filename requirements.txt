@@ -1,13 +1,20 @@
 albumentations
-matplotlib>=3.6.1
+nvidia-cuda-runtime-cu12
+nvidia-cudnn-cu12
+nvidia-cufft-cu12
+matplotlib
 scikit-image
+jupyter
 numpy
 scipy
 pandas
 pytest-timeout
 joblib
 fastai
-torch
-torchvision
 pooch
 exif
+--extra-index-url https://download.pytorch.org/whl/cu126
+torch==2.6.0+cu126
+torchaudio==2.6.0+cu126
+torchvision==0.21.0+cu126
+
