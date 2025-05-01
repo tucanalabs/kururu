@@ -29,20 +29,24 @@ A partir daqui obtemos, para cada imagem, uma lista de coordenadas (x1,y1),(x2,y
 
 - *Extração de pontos-chave e criação de JSON:* para facilitar o uso das anotações, salvamos as coordenadas em arquivos JSON. Cada entrada JSON pode conter o nome da imagem e um vetor com todos os pontos. Por exemplo:
 
+#+BEGIN_SRC json
 {
   "image": "img001.jpg",
   "keypoints": [[120, 45], [200, 30], [180, 160], ...]
 }
+#+END_SRC
 
 Esse formato estruturado permite que o script de treino leia facilmente as imagens e seus pontos. A conversão de tabela para JSON pode ser feita via funções como df.to_dict(orient='records') ou escrevendo manualmente um dicionário e salvando com json.dump().
 
 - *Estrutura de pastas:* criamos uma estrutura de diretórios para separar treino e validação:
 
-    /dataset/
+#+BEGIN_SRC txt
+    /data/
       train/images/      # imagens de treino
       train/labels/      # JSON com pontos de treino
       test/              # imagens de teste
       predict/           # predições do modelo
+#+END_SRC
 
     Assim, dividimos o conjunto de dados em 80% para treino e 20% para validação. As imagens referenciadas no JSON são copiadas para train/images ou test/, conforme o arquivo JSON.
 
