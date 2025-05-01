@@ -1,3 +1,7 @@
+<p align="center">
+    <img src="./misc/kururu_logo.png" width="300">
+</p>
+
 * Kururu
 
 Kururu é destinado a detectar automaticamente pontos-chave (keypoints) em imagens biológicas. Seu objetivo é localizar coordenadas específicas (por exemplo, pontos anatômicos em um animal) usando aprendizado de máquina. O pipeline é dividido em três etapas principais:
