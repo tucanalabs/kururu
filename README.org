@@ -1,6 +1,6 @@
-* Introdução
+* Kururu
 
-O pipeline Kururu é destinado a detectar automaticamente pontos-chave (keypoints) em imagens biológicas. Seu objetivo é localizar coordenadas específicas (por exemplo, pontos anatômicos em um animal) usando aprendizado de máquina. O pipeline é dividido em três etapas principais:
+Kururu é destinado a detectar automaticamente pontos-chave (keypoints) em imagens biológicas. Seu objetivo é localizar coordenadas específicas (por exemplo, pontos anatômicos em um animal) usando aprendizado de máquina. O pipeline é dividido em três etapas principais:
 
 - *Preparação do Conjunto de Dados (prepare_dataset.py):* extrai anotações de um arquivo (planilha Excel) e organiza imagens e rótulos em formatos adequados (JSON, pastas de treino/validação).
 - *Treinamento do Modelo (train.py):* configura e treina uma rede neural profunda (usando FastAI e PyTorch) em fases progressivas, ajustando gradualmente a resolução e refinando o modelo (fine-tuning).
