@@ -1,4 +1,4 @@
-Introdução
+* Introdução
 
 O pipeline Kururu é destinado a detectar automaticamente pontos-chave (keypoints) em imagens biológicas. Seu objetivo é localizar coordenadas específicas (por exemplo, pontos anatômicos em um animal) usando aprendizado de máquina. O pipeline é dividido em três etapas principais:
 
@@ -157,7 +157,7 @@ Visualização dos resultados: é útil verificar visualmente as predições. Po
 
     Assim, cada imagem de saída mostra os pontos-chave detectados (e, opcionalmente, podemos comparar com os pontos verdadeiros se disponíveis). Essa visualização ajuda biólogos a validar qualitativamente o desempenho do modelo.
 
-Saídas Geradas
+* Saídas Geradas
 
 Cada etapa do pipeline produz arquivos de saída para análise e uso posterior. Os principais são:
 
