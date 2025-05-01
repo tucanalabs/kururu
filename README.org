@@ -1,0 +1,257 @@
+Introdução
+
+O pipeline Kururu é destinado a detectar automaticamente pontos-chave (keypoints) em imagens biológicas. Seu objetivo é localizar coordenadas específicas (por exemplo, pontos anatômicos em um animal) usando aprendizado de máquina. O pipeline é dividido em três etapas principais:
+
+    Preparação do Conjunto de Dados (prepare_dataset.py): extrai anotações de um arquivo (planilha Excel) e organiza imagens e rótulos em formatos adequados (JSON, pastas de treino/validação).
+
+    Treinamento do Modelo (train.py): configura e treina uma rede neural profunda (usando FastAI e PyTorch) em fases progressivas, ajustando gradualmente a resolução e refinando o modelo (fine-tuning).
+
+    Predição com o Modelo Treinado (predict.py): carrega o modelo final e faz inferências em novas imagens, gerando as coordenadas preditas e visualizações com os pontos sobrepostos.
+
+Cada etapa produz arquivos de saída que permitem acompanhar o processo: anotação dos pontos (JSON), imagens anotadas, registros de treinamento (logs), modelos salvos (arquivos .pkl) e tabelas de resultados (CSV de predições).
+
+Exemplo de esquema do pipeline: imagens originais + coordenadas no Excel → JSON e organização de pastas → modelo treinado (ResNet) → predição de novos pontos-chave.
+Preparação do Conjunto de Dados (prepare_dataset.py)
+
+Nesta etapa, transformamos as anotações originais (geralmente em Excel) no formato usado pelo modelo. O script realiza os seguintes passos principais:
+
+    Leitura da planilha Excel: usamos bibliotecas como pandas para ler um arquivo Excel que contém, em cada linha, o nome de uma imagem e as coordenadas dos pontos-chave correspondentes. Por exemplo:
+
+#+BEGIN_SRC python
+import pandas as pd
+df = pd.read_excel('anotacoes.xlsx')
+for _, row in df.iterrows():
+    nome_img = row['nome_imagem']
+    x1, y1 = row['ponto1_x'], row['ponto1_y']
+    # ... repete para cada ponto-chave
+#+END_SRC
+
+A partir daqui obtemos, para cada imagem, uma lista de coordenadas (x1,y1),(x2,y2),...(x1,y1),(x2,y2),....
+
+Extração de pontos-chave e criação de JSON: para facilitar o uso das anotações, salvamos as coordenadas em arquivos JSON. Cada entrada JSON pode conter o nome da imagem e um vetor com todos os pontos. Por exemplo:
+
+{
+  "image": "img001.jpg",
+  "keypoints": [[120, 45], [200, 30], [180, 160], ...]
+}
+
+Esse formato estruturado permite que o script de treino leia facilmente as imagens e seus pontos. A conversão de tabela para JSON pode ser feita via funções como df.to_dict(orient='records') ou escrevendo manualmente um dicionário e salvando com json.dump().
+
+Organização de pastas: criamos uma estrutura de diretórios para separar treino e validação. Por exemplo:
+
+    /dataset/
+      train/images/      # imagens de treino
+      train/annotations/ # JSON com pontos de treino
+      valid/images/      # imagens de validação
+      valid/annotations/ # JSON com pontos de validação
+
+    Assim, dividimos o conjunto de dados em, por exemplo, 80% para treino e 20% para validação. As imagens referenciadas no JSON são copiadas para train/images ou valid/images, conforme o grupo definido.
+
+    Cópia ou link das imagens: o script copia fisicamente (ou cria links simbólicos) das imagens originais para as pastas organizadas. Isso garante que o DataLoader do FastAI possa carregar as imagens pela estrutura de pastas.
+
+Esses passos preparam o conjunto de dados em um formato padronizado, com anotações acessíveis e sem mixar arquivos. Assim, podemos prosseguir para o treinamento sabendo exatamente onde estão as imagens e seus pontos-chave correspondentes.
+Treinamento do Modelo (train.py)
+
+O treinamento envolve configurar um modelo de deep learning para aprender a prever os pontos-chave. Essa etapa é a mais complexa e contém várias sub-etapas:
+
+    Arquitetura (ResNet): usamos uma rede neural convolucional pré-treinada (como ResNet34 ou ResNet50 do TorchVision) como backbone para extrair características das imagens. ResNet é uma família de redes profundas com conexões residuais​
+    en.wikipedia.org
+    . Essas conexões ajudam no treinamento de modelos muito profundos e foram pioneiras em competições de visão computacional. Em FastAI, podemos criar um cnn_learner usando resnet34 por exemplo, baixando pesos treinados no ImageNet​
+    pytorch.org
+    para transferência de aprendizado.
+
+    Configuração de DataBlock: definimos um DataBlock do fastai para dizer como obter imagens e pontos. Por exemplo:
+
+#+BEGIN_SRC python
+dblock = DataBlock(
+    blocks=(ImageBlock, PointBlock),
+    get_items=get_image_files,
+    get_y=extrair_pontos,      # função que retorna tensor de pontos para cada imagem
+    splitter=RandomSplitter(0.2),
+    item_tfms=Resize(128),
+    batch_tfms=[Normalize.from_stats(*imagenet_stats)]
+)
+dls = dblock.dataloaders(path_to_dataset)
+#+END_SRC
+
+Aqui ImageBlock indica que a entrada são imagens, e PointBlock indica que as saídas são pontos num espaço 2D. O getter get_items encontra arquivos de imagem, e get_y lê os pontos (ex: do JSON criado). Resize(128) aplica redimensionamento inicial para 128×128 pixels (mais rápido). Em seguida, aplicamos Normalize.from_stats(*imagenet_stats) para normalizar os pixels subtraindo a média e dividindo pelo desvio padrão (dos dados ImageNet)​
+elte.me
+​
+datascience.stackexchange.com
+. A normalização ajuda o modelo a treinar de forma estável.
+
+Fases de treinamento: executamos o treinamento em etapas:
+
+    Baixa resolução: treinar inicialmente com imagens reduzidas (e.g. 128×128) por algumas épocas, facilitando o ajuste rápido dos pesos iniciais.
+
+    Resize progressivo: gradualmente aumentamos o tamanho das imagens (p. ex. 256×256), re-treinando para que o modelo aprenda detalhes mais finos. Esse método acelera o treino inicial e, depois, melhora a precisão final.
+
+    Fine-tuning: desbloqueamos camadas pré-treinadas da ResNet e treinamos por mais épocas com taxa de aprendizado menor. O fine-tuning é a técnica de refinar um modelo pré-treinado em novos dados​
+    en.wikipedia.org
+    . Em redes convolucionais, costuma-se congelar inicialmente camadas iniciais (que aprendem características gerais) e treinar apenas as últimas, depois liberar todas as camadas. Assim, adaptamos o modelo (pré-treinado em ImageNet) para o nosso problema específico.
+
+Função de perda (loss): como se trata de regressão de pontos, usamos normalmente o erro quadrático médio (MSE, Mean Squared Error) como função de perda. O MSE mede a média dos quadrados da diferença entre as coordenadas previstas e as reais​
+en.wikipedia.org
+. Ou seja, penaliza mais os erros maiores, buscando ajustar as previsões aos valores reais. Em FastAI, usamos MSELossFlat() ou similar como loss_func no Learner.
+
+Normalização de coordenadas: durante o treino, às vezes normalizamos as coordenadas dos pontos (por exemplo, dividindo pela largura/altura da imagem) para que fiquem em escala 0–1. No final, os resultados são desnormalizados para retornar às coordenadas originais. Esse passo inverso multiplica pelas dimensões originais da imagem, ajustando o tamanho.
+
+Callbacks: utilizamos callbacks (mecanismos de retorno de chamada) para controlar o processo. Por exemplo:
+
+    SaveModelCallback: salva automaticamente o modelo que obtiver o menor erro de validação​
+    docs.fast.ai
+    . Assim, garantimos guardar o melhor estado encontrado durante o treino.
+
+    EarlyStoppingCallback: interrompe o treinamento se a perda de validação parar de melhorar após algumas épocas​
+    docs.fast.ai
+    . Isso evita treinar demais quando o modelo já convergiu.
+
+    Outros callbacks típicos são para registrar métricas, reduzir a taxa de aprendizado em platôs, etc.
+
+Comandos de treinamento: o script train.py normalmente aceita parâmetros (quantidade de épocas, taxa de aprendizado, tamanho do batch, etc). Por exemplo:
+
+    #+BEGIN_SRC bash
+    $ python train.py --epochs 30 --lr 1e-3 --batch_size 16
+    #+END_SRC
+
+Durante cada época, o modelo processa lotes (batches) de imagens, calcula a perda (MSE) e atualiza os pesos via backpropagation. Periodicamente avaliamos no conjunto de validação. O registro desses valores fica nos logs, para análise posterior. No fim de cada fase (baixa resolução, alta resolução, fine-tuning), espera-se ver a curva de perda de treinamento caindo e a validação acompanhando, demonstrando que o modelo está aprendendo a localizar os pontos-chave.
+Predição com o Modelo Treinado (predict.py)
+
+Nesta fase, carregamos o modelo final e usamos para predizer pontos em novas imagens:
+
+    Carregamento do modelo: usamos load_learner do FastAI ou o próprio Learner.load para reabrir o arquivo .pkl gerado no treinamento (por exemplo modelo_final.pkl). Isso recria a rede treinada com todos os pesos salvos.
+
+    Previsão de novos pontos: para cada imagem nova, fazemos uma predição passando a imagem pelo modelo:
+
+#+BEGIN_SRC python
+from fastai.vision.all import load_learner, PILImage
+learn = load_learner('modelo_final.pkl')
+img = PILImage.create('imagem_nova.jpg')
+predicted_pontos = learn.predict(img)[1]  # [1] pega os pontos previstos
+#+END_SRC
+
+A função predict retorna uma tupla cujo segundo elemento é o vetor de pontos predito. Cada ponto vem escalonado de acordo com as transformações aplicadas (e.g. se redimensionamos para 256×256, temos de multiplicar as coordenadas pelo fator adequado para voltar à imagem original). Esse processo de desnormalização garante que as coordenadas preditas correspondam aos pixels da imagem original.
+
+Geração de CSV: consolidamos todas as predições em um arquivo CSV para facilitar análise. Por exemplo:
+
+#+BEGIN_SRC python
+import pandas as pd
+results = []  # lista de dicionários: {'image':..., 'x1':..., 'y1':...}
+for img_path in lista_imagens:
+    img = PILImage.create(img_path)
+    pontos = learn.predict(img)[1].tolist()
+    results.append({'imagem': img_path, 'x1': pontos[0][0], 'y1': pontos[0][1], ...})
+df = pd.DataFrame(results)
+df.to_csv('predictions.csv', index=False)
+#+END_SRC
+
+Visualização dos resultados: é útil verificar visualmente as predições. Podemos usar bibliotecas como OpenCV ou Matplotlib para desenhar círculos nas coordenadas previstas e salvar a imagem anotada. Por exemplo:
+
+    #+BEGIN_SRC python
+    import cv2
+    img = cv2.imread('imagem_nova.jpg')
+    for (x, y) in pontos:
+        cv2.circle(img, (int(x), int(y)), radius=3, color=(0,255,0), thickness=-1)
+    cv2.imwrite('resultado_annotado.jpg', img)
+    #+END_SRC
+
+    Assim, cada imagem de saída mostra os pontos-chave detectados (e, opcionalmente, podemos comparar com os pontos verdadeiros se disponíveis). Essa visualização ajuda biólogos a validar qualitativamente o desempenho do modelo.
+
+Saídas Geradas
+
+Cada etapa do pipeline produz arquivos de saída para análise e uso posterior. Os principais são:
+
+    Após prepare_dataset.py:
+
+        Arquivo(s) JSON: contêm as anotações dos pontos-chave para cada imagem (formato { "image": "...", "keypoints": [...] }).
+
+        Diretórios organizados: pastas separadas de imagens de treino/validação e suas anotações correspondentes.
+
+    Após train.py:
+
+        Modelo(s) treinado(s): arquivos do tipo *.pkl (FastAI) ou checkpoints, contendo pesos da rede neural. Exemplo: modelo_final.pkl. Se usados callbacks, também pode haver modelos salvos intermediários (model_epochXX.pkl).
+
+        Logs de treinamento: registros da perda e métricas por época (pode ser saída no console ou arquivo .txt/.csv). Permite avaliar a curva de aprendizado.
+
+        Imagens de exemplo com keypoints: durante/ao fim do treino, o script pode gerar alguns lotes de imagens de validação com os pontos previstos sobrepostos (usando show_batch do FastAI). São úteis para inspeção visual.
+
+    Após predict.py:
+
+        CSV com predições: tabela onde cada linha corresponde a uma imagem e inclui as coordenadas preditas (x1,y1,x2,y2, ...). Exemplo: predictions.csv.
+
+        Imagens anotadas: cópias das imagens de entrada com os pontos-chave desenhados sobre elas (.jpg, .png etc). Isso facilita a apresentação dos resultados.
+
+        Outros arquivos: se o script criar relatórios adicionais (por exemplo, métricas de erro), eles também são salvos.
+
+Cada arquivo exportado documenta o progresso do pipeline, garantindo rastreabilidade: dos dados brutos (Excel) aos dados preparados (JSON), ao modelo aprendido (.pkl), até os resultados finais (CSV e imagens anotadas).
+Glossário de Termos Técnicos
+
+    Callback: componente do fastai que executa ações em certos momentos do treinamento (por exemplo, ao fim de cada época)​
+    docs.fast.ai
+    ​
+    docs.fast.ai
+    . Exemplos: SaveModelCallback (salva o melhor modelo) e EarlyStoppingCallback (interrompe quando a métrica não melhora). São úteis para automatizar tarefas sem alterar o loop principal de treinamento.
+
+    Fine-tuning (Ajuste fino): técnica de transfer learning em que um modelo pré-treinado (ex. ResNet treinada em ImageNet) é re-treinado em novos dados​
+    en.wikipedia.org
+    . Pode-se atualizar apenas as camadas finais ou todas as camadas (descongelando-as). O objetivo é adaptar conhecimentos gerais da rede (detecção de bordas, texturas, etc.) ao caso específico dos pontos-chave.
+
+    Normalização de imagem: processo de padronizar pixels de entrada, subtraindo uma média e dividindo pelo desvio padrão (geralmente pré-computados, como médias do ImageNet)​
+    datascience.stackexchange.com
+    . Isso centra os dados em torno de zero e escala (usando normalização estatística), melhorando a estabilidade do treinamento. Em visão computacional, às vezes também se usa “normalização” no sentido de dividir os pixels por 255 (0–1) ou dividir coordenadas pelo tamanho da imagem.
+
+    Função de perda (loss): métrica que quantifica o erro entre a saída prevista e a real. Em regressão de pontos-chave, usamos com frequência o Erro Médio Quadrático (MSE)​
+    en.wikipedia.org
+    . O MSE é a média dos quadrados das diferenças entre valores preditos e verdadeiros, penalizando fortemente erros maiores.
+
+    Rede Neural Convolucional (CNN): tipo de rede neural projetado para processar imagens. Aplica filtros (kernels) sobre a imagem para aprender padrões espaciais. Camadas convolucionais extraem características como bordas e texturas. A ResNet usada no modelo é uma CNN avançada com conexões residuais​
+    en.wikipedia.org
+    .
+
+    Época (epoch): uma passagem completa por todo o conjunto de dados de treinamento. Em cada época, o modelo vê todas as imagens (divididas em batches).
+
+    Batch: subconjunto de imagens usado em uma iteração de treino. Processar em batches (por exemplo 16 ou 32 imagens por vez) equilibra uso de memória e eficiência computacional.
+
+    Backbone: componente principal da rede (geralmente pré-treinado) que extrai características gerais da imagem. No nosso caso, a ResNet atua como backbone antes da parte final de regressão dos pontos.
+
+    Augmentation: (Aumento de dados) conjunto de transformações (girar, espelhar, zoom, etc) aplicadas aleatoriamente às imagens durante o treinamento. Ajuda o modelo a generalizar melhor. Por exemplo, o fastai tem aug_transforms para aplicar essas alterações automaticamente.
+
+Esses termos aparecem ao longo do pipeline e, além das definições acima, serão sempre explicados em contexto para garantir compreensão. Qualquer conceito matemático complexo (como derivadas ou backpropagation) foi omitido por não ser necessário ao usuário final — o foco é entender o que cada etapa faz e como executá-la.
+Referências
+
+    FastAI DataBlock API e transformações de imagem: DataBlock é um container genérico para construir DataLoaders especificando tipos de entrada/saída e funções de acesso​
+    docs.fast.ai
+    ​
+    elte.me
+    .
+
+    FastAI PointBlock (anotação de pontos): exemplo de uso no Keypoint Regression​
+    elte.me
+    .
+
+    TorchVision Models: o subpacote torchvision.models inclui arquiteturas pré-treinadas para tarefas de visão, incluindo detecção de pontos-chave​
+    pytorch.org
+    .
+
+    ResNet: Rede neural residual usada no modelo​
+    en.wikipedia.org
+    .
+
+    Fine-tuning: definição de ajuste fino como transferência de aprendizado em redes pré-treinadas​
+    en.wikipedia.org
+    .
+
+    Normalização vs Padronização: discussão sobre normalização de imagens (escala de 0–255 vs subtrair média/dividir por desvio)​
+    datascience.stackexchange.com
+    .
+
+    Mean Squared Error (MSE): definição de erro quadrático médio como função de perda​
+    en.wikipedia.org
+    .
+
+    FastAI SaveModelCallback e EarlyStoppingCallback: guias oficiais de callbacks de monitoramento no FastAI​
+    docs.fast.ai
+    ​
+    docs.fast.ai
+    .
+
