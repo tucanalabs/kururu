@@ -2,20 +2,19 @@
 
 O pipeline Kururu é destinado a detectar automaticamente pontos-chave (keypoints) em imagens biológicas. Seu objetivo é localizar coordenadas específicas (por exemplo, pontos anatômicos em um animal) usando aprendizado de máquina. O pipeline é dividido em três etapas principais:
 
-    Preparação do Conjunto de Dados (prepare_dataset.py): extrai anotações de um arquivo (planilha Excel) e organiza imagens e rótulos em formatos adequados (JSON, pastas de treino/validação).
-
-    Treinamento do Modelo (train.py): configura e treina uma rede neural profunda (usando FastAI e PyTorch) em fases progressivas, ajustando gradualmente a resolução e refinando o modelo (fine-tuning).
-
-    Predição com o Modelo Treinado (predict.py): carrega o modelo final e faz inferências em novas imagens, gerando as coordenadas preditas e visualizações com os pontos sobrepostos.
+- *Preparação do Conjunto de Dados (prepare_dataset.py):* extrai anotações de um arquivo (planilha Excel) e organiza imagens e rótulos em formatos adequados (JSON, pastas de treino/validação).
+- *Treinamento do Modelo (train.py):* configura e treina uma rede neural profunda (usando FastAI e PyTorch) em fases progressivas, ajustando gradualmente a resolução e refinando o modelo (fine-tuning).
+- *Predição com o Modelo Treinado (predict.py):* carrega o modelo final e faz inferências em novas imagens, gerando as coordenadas preditas e visualizações com os pontos sobrepostos.
 
 Cada etapa produz arquivos de saída que permitem acompanhar o processo: anotação dos pontos (JSON), imagens anotadas, registros de treinamento (logs), modelos salvos (arquivos .pkl) e tabelas de resultados (CSV de predições).
 
-Exemplo de esquema do pipeline: imagens originais + coordenadas no Excel → JSON e organização de pastas → modelo treinado (ResNet) → predição de novos pontos-chave.
-Preparação do Conjunto de Dados (prepare_dataset.py)
+- *Exemplo de esquema do pipeline:* imagens originais + coordenadas no Excel → JSON e organização de pastas → modelo treinado (ResNet) → predição de novos pontos-chave.
+
+* Preparação do Conjunto de Dados (prepare_dataset.py)
 
 Nesta etapa, transformamos as anotações originais (geralmente em Excel) no formato usado pelo modelo. O script realiza os seguintes passos principais:
 
-    Leitura da planilha Excel: usamos bibliotecas como pandas para ler um arquivo Excel que contém, em cada linha, o nome de uma imagem e as coordenadas dos pontos-chave correspondentes. Por exemplo:
+- *Leitura da planilha:* usamos bibliotecas como pandas para ler um arquivo Excel que contém, em cada linha, o nome de uma imagem e as coordenadas dos pontos-chave correspondentes. Por exemplo:
 
 #+BEGIN_SRC python
 import pandas as pd
@@ -28,7 +27,7 @@ for _, row in df.iterrows():
 
 A partir daqui obtemos, para cada imagem, uma lista de coordenadas (x1,y1),(x2,y2),...(x1,y1),(x2,y2),....
 
-Extração de pontos-chave e criação de JSON: para facilitar o uso das anotações, salvamos as coordenadas em arquivos JSON. Cada entrada JSON pode conter o nome da imagem e um vetor com todos os pontos. Por exemplo:
+- *Extração de pontos-chave e criação de JSON:* para facilitar o uso das anotações, salvamos as coordenadas em arquivos JSON. Cada entrada JSON pode conter o nome da imagem e um vetor com todos os pontos. Por exemplo:
 
 {
   "image": "img001.jpg",
@@ -37,30 +36,27 @@ Extração de pontos-chave e criação de JSON: para facilitar o uso das anotaç
 
 Esse formato estruturado permite que o script de treino leia facilmente as imagens e seus pontos. A conversão de tabela para JSON pode ser feita via funções como df.to_dict(orient='records') ou escrevendo manualmente um dicionário e salvando com json.dump().
 
-Organização de pastas: criamos uma estrutura de diretórios para separar treino e validação. Por exemplo:
+- *Estrutura de pastas:* criamos uma estrutura de diretórios para separar treino e validação:
 
     /dataset/
       train/images/      # imagens de treino
-      train/annotations/ # JSON com pontos de treino
-      valid/images/      # imagens de validação
-      valid/annotations/ # JSON com pontos de validação
+      train/labels/      # JSON com pontos de treino
+      test/              # imagens de teste
+      predict/           # predições do modelo
 
-    Assim, dividimos o conjunto de dados em, por exemplo, 80% para treino e 20% para validação. As imagens referenciadas no JSON são copiadas para train/images ou valid/images, conforme o grupo definido.
+    Assim, dividimos o conjunto de dados em 80% para treino e 20% para validação. As imagens referenciadas no JSON são copiadas para train/images ou test/, conforme o arquivo JSON.
 
-    Cópia ou link das imagens: o script copia fisicamente (ou cria links simbólicos) das imagens originais para as pastas organizadas. Isso garante que o DataLoader do FastAI possa carregar as imagens pela estrutura de pastas.
+- *Cópia das imagens:* o script copia fisicamente as imagens originais para as pastas organizadas. Isso garante que o DataLoader do FastAI possa carregar as imagens pela estrutura de pastas.
 
 Esses passos preparam o conjunto de dados em um formato padronizado, com anotações acessíveis e sem mixar arquivos. Assim, podemos prosseguir para o treinamento sabendo exatamente onde estão as imagens e seus pontos-chave correspondentes.
-Treinamento do Modelo (train.py)
+
+* Treinamento do Modelo (train.py)
 
 O treinamento envolve configurar um modelo de deep learning para aprender a prever os pontos-chave. Essa etapa é a mais complexa e contém várias sub-etapas:
 
-    Arquitetura (ResNet): usamos uma rede neural convolucional pré-treinada (como ResNet34 ou ResNet50 do TorchVision) como backbone para extrair características das imagens. ResNet é uma família de redes profundas com conexões residuais​
-    en.wikipedia.org
-    . Essas conexões ajudam no treinamento de modelos muito profundos e foram pioneiras em competições de visão computacional. Em FastAI, podemos criar um cnn_learner usando resnet34 por exemplo, baixando pesos treinados no ImageNet​
-    pytorch.org
-    para transferência de aprendizado.
+- *Arquitetura (ResNet):* usamos uma rede neural convolucional pré-treinada (como ResNet34 ou ResNet50 do TorchVision) como backbone para extrair características das imagens. ResNet é uma família de redes profundas com conexões residuais​. Essas conexões ajudam no treinamento de modelos muito profundos e foram pioneiras em competições de visão computacional. Em FastAI, podemos criar um cnn_learner usando resnet34 por exemplo, baixando pesos treinados no ImageNet​ para transferência de aprendizado.
 
-    Configuração de DataBlock: definimos um DataBlock do fastai para dizer como obter imagens e pontos. Por exemplo:
+- *Configuração de DataBlock:* definimos um DataBlock do fastai para dizer como obter imagens e pontos. Por exemplo:
 
 #+BEGIN_SRC python
 dblock = DataBlock(
@@ -74,41 +70,18 @@ dblock = DataBlock(
 dls = dblock.dataloaders(path_to_dataset)
 #+END_SRC
 
-Aqui ImageBlock indica que a entrada são imagens, e PointBlock indica que as saídas são pontos num espaço 2D. O getter get_items encontra arquivos de imagem, e get_y lê os pontos (ex: do JSON criado). Resize(128) aplica redimensionamento inicial para 128×128 pixels (mais rápido). Em seguida, aplicamos Normalize.from_stats(*imagenet_stats) para normalizar os pixels subtraindo a média e dividindo pelo desvio padrão (dos dados ImageNet)​
-elte.me
-​
-datascience.stackexchange.com
-. A normalização ajuda o modelo a treinar de forma estável.
+Aqui ImageBlock indica que a entrada são imagens, e PointBlock indica que as saídas são pontos num espaço 2D. O getter get_items encontra arquivos de imagem, e get_y lê os pontos (ex: do JSON criado). Resize(128) aplica redimensionamento inicial para 128×128 pixels (mais rápido). Em seguida, aplicamos Normalize.from_stats(*imagenet_stats) para normalizar os pixels subtraindo a média e dividindo pelo desvio padrão (dos dados ImageNet)​. A normalização ajuda o modelo a treinar de forma estável.
 
-Fases de treinamento: executamos o treinamento em etapas:
-
-    Baixa resolução: treinar inicialmente com imagens reduzidas (e.g. 128×128) por algumas épocas, facilitando o ajuste rápido dos pesos iniciais.
-
-    Resize progressivo: gradualmente aumentamos o tamanho das imagens (p. ex. 256×256), re-treinando para que o modelo aprenda detalhes mais finos. Esse método acelera o treino inicial e, depois, melhora a precisão final.
-
-    Fine-tuning: desbloqueamos camadas pré-treinadas da ResNet e treinamos por mais épocas com taxa de aprendizado menor. O fine-tuning é a técnica de refinar um modelo pré-treinado em novos dados​
-    en.wikipedia.org
-    . Em redes convolucionais, costuma-se congelar inicialmente camadas iniciais (que aprendem características gerais) e treinar apenas as últimas, depois liberar todas as camadas. Assim, adaptamos o modelo (pré-treinado em ImageNet) para o nosso problema específico.
-
-Função de perda (loss): como se trata de regressão de pontos, usamos normalmente o erro quadrático médio (MSE, Mean Squared Error) como função de perda. O MSE mede a média dos quadrados da diferença entre as coordenadas previstas e as reais​
-en.wikipedia.org
-. Ou seja, penaliza mais os erros maiores, buscando ajustar as previsões aos valores reais. Em FastAI, usamos MSELossFlat() ou similar como loss_func no Learner.
-
-Normalização de coordenadas: durante o treino, às vezes normalizamos as coordenadas dos pontos (por exemplo, dividindo pela largura/altura da imagem) para que fiquem em escala 0–1. No final, os resultados são desnormalizados para retornar às coordenadas originais. Esse passo inverso multiplica pelas dimensões originais da imagem, ajustando o tamanho.
-
-Callbacks: utilizamos callbacks (mecanismos de retorno de chamada) para controlar o processo. Por exemplo:
-
-    SaveModelCallback: salva automaticamente o modelo que obtiver o menor erro de validação​
-    docs.fast.ai
-    . Assim, garantimos guardar o melhor estado encontrado durante o treino.
-
-    EarlyStoppingCallback: interrompe o treinamento se a perda de validação parar de melhorar após algumas épocas​
-    docs.fast.ai
-    . Isso evita treinar demais quando o modelo já convergiu.
-
+- *Fases de treinamento:* executamos o treinamento em etapas:
+  - *Baixa resolução:* treinar inicialmente com imagens reduzidas por algumas épocas, facilitando o ajuste rápido dos pesos iniciais.
+  - *Redimensionamento progressivo:* gradualmente aumentamos o tamanho das imagens, re-treinando para que o modelo aprenda detalhes mais finos. Esse método acelera o treino inicial e, depois, melhora a precisão final.
+  - *Fine-tuning:* desbloqueamos camadas pré-treinadas da ResNet e treinamos por mais épocas com taxa de aprendizado menor. O fine-tuning é a técnica de refinar um modelo pré-treinado em novos dados​. Em redes convolucionais, costuma-se congelar inicialmente camadas iniciais (que aprendem características gerais) e treinar apenas as últimas, depois liberar todas as camadas. Assim, adaptamos o modelo (pré-treinado em ImageNet) para o nosso problema específico.
+  - *Função de perda (loss):* como se trata de regressão de pontos, usamos normalmente o erro quadrático médio (MSE, Mean Squared Error) como função de perda. O MSE mede a média dos quadrados da diferença entre as coordenadas previstas e as reais​. Ou seja, penaliza mais os erros maiores, buscando ajustar as previsões aos valores reais. Em FastAI, usamos MSELossFlat() ou similar como loss_func no Learner.
+  - *Normalização de coordenadas:* durante o treino, às vezes normalizamos as coordenadas dos pontos (por exemplo, dividindo pela largura/altura da imagem) para que fiquem em escala 0–1. No final, os resultados são desnormalizados para retornar às coordenadas originais. Esse passo inverso multiplica pelas dimensões originais da imagem, ajustando o tamanho.
+  - *Callbacks:* utilizamos callbacks (mecanismos de retorno de chamada) para controlar o processo. Um deles:
+    - *SaveModelCallback:* salva automaticamente o modelo que obtiver o menor erro de validação​. Assim, garantimos guardar o melhor estado encontrado durante o treino.
     Outros callbacks típicos são para registrar métricas, reduzir a taxa de aprendizado em platôs, etc.
-
-Comandos de treinamento: o script train.py normalmente aceita parâmetros (quantidade de épocas, taxa de aprendizado, tamanho do batch, etc). Por exemplo:
+  - *Comandos de treinamento:* o script train.py normalmente aceita parâmetros (quantidade de épocas, taxa de aprendizado, tamanho do batch, etc). Por exemplo:
 
     #+BEGIN_SRC bash
     $ python train.py --epochs 30 --lr 1e-3 --batch_size 16
