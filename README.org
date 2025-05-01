@@ -1,5 +1,5 @@
 <p align="center">
-    <img src="./kururu_logo.jpeg" width="300">
+    <img src="./kururu-logo.jpeg" width="300">
 </p>
 
 * Kururu
